@@ -1,0 +1,553 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Family Calendar Agent</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+            font-weight: 300;
+        }
+
+        .header p {
+            font-size: 1.1rem;
+            opacity: 0.9;
+        }
+
+        .main-content {
+            padding: 40px;
+        }
+
+        .input-section {
+            margin-bottom: 30px;
+        }
+
+        .input-tabs {
+            display: flex;
+            margin-bottom: 20px;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+
+        .tab-button {
+            flex: 1;
+            padding: 15px;
+            border: none;
+            background: #f8f9fa;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-size: 1rem;
+            font-weight: 500;
+        }
+
+        .tab-button.active {
+            background: #4facfe;
+            color: white;
+        }
+
+        .tab-button:hover {
+            background: #4facfe;
+            color: white;
+        }
+
+        .input-area {
+            display: none;
+            animation: fadeIn 0.3s ease;
+        }
+
+        .input-area.active {
+            display: block;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .text-input {
+            width: 100%;
+            padding: 15px;
+            border: 2px solid #e9ecef;
+            border-radius: 10px;
+            font-size: 1rem;
+            resize: vertical;
+            min-height: 100px;
+            transition: border-color 0.3s ease;
+        }
+
+        .text-input:focus {
+            outline: none;
+            border-color: #4facfe;
+        }
+
+        .voice-controls {
+            text-align: center;
+            padding: 20px;
+        }
+
+        .record-button {
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            border: none;
+            background: linear-gradient(135deg, #ff6b6b, #ee5a24);
+            color: white;
+            font-size: 1.5rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(255,107,107,0.3);
+        }
+
+        .record-button:hover {
+            transform: scale(1.05);
+            box-shadow: 0 6px 20px rgba(255,107,107,0.4);
+        }
+
+        .record-button.recording {
+            background: linear-gradient(135deg, #ff4757, #c44569);
+            animation: pulse 1.5s infinite;
+        }
+
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+            100% { transform: scale(1); }
+        }
+
+        .file-upload {
+            text-align: center;
+            padding: 40px;
+            border: 2px dashed #4facfe;
+            border-radius: 10px;
+            background: #f8f9ff;
+            transition: all 0.3s ease;
+        }
+
+        .file-upload:hover {
+            border-color: #667eea;
+            background: #f0f2ff;
+        }
+
+        .file-upload input[type="file"] {
+            display: none;
+        }
+
+        .upload-label {
+            cursor: pointer;
+            color: #4facfe;
+            font-size: 1.1rem;
+            font-weight: 500;
+        }
+
+        .submit-button {
+            width: 100%;
+            padding: 15px;
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+            color: white;
+            border: none;
+            border-radius: 10px;
+            font-size: 1.1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin-top: 20px;
+        }
+
+        .submit-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px rgba(79,172,254,0.3);
+        }
+
+        .submit-button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .response-section {
+            margin-top: 30px;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 10px;
+            border-left: 4px solid #4facfe;
+        }
+
+        .response-message {
+            font-size: 1.1rem;
+            margin-bottom: 15px;
+            line-height: 1.6;
+        }
+
+        .response-success {
+            color: #28a745;
+        }
+
+        .response-error {
+            color: #dc3545;
+        }
+
+        .suggestions {
+            margin-top: 15px;
+        }
+
+        .suggestions h4 {
+            color: #6c757d;
+            margin-bottom: 10px;
+        }
+
+        .suggestion-list {
+            list-style: none;
+        }
+
+        .suggestion-list li {
+            padding: 8px 0;
+            color: #495057;
+            border-bottom: 1px solid #e9ecef;
+        }
+
+        .suggestion-list li:last-child {
+            border-bottom: none;
+        }
+
+        .examples {
+            margin-top: 30px;
+            padding: 20px;
+            background: #e3f2fd;
+            border-radius: 10px;
+        }
+
+        .examples h3 {
+            color: #1976d2;
+            margin-bottom: 15px;
+        }
+
+        .example-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 15px;
+        }
+
+        .example-card {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+
+        .example-card h4 {
+            color: #1976d2;
+            margin-bottom: 8px;
+        }
+
+        .example-card p {
+            color: #666;
+            font-size: 0.9rem;
+        }
+
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 20px;
+        }
+
+        .spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #4facfe;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 10px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                margin: 10px;
+                border-radius: 15px;
+            }
+
+            .header h1 {
+                font-size: 2rem;
+            }
+
+            .main-content {
+                padding: 20px;
+            }
+
+            .example-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🗓️ AI Family Calendar Agent</h1>
+            <p>Organize your family calendar with voice commands and text messages</p>
+        </div>
+
+        <div class="main-content">
+            <div class="input-section">
+                <div class="input-tabs">
+                    <button class="tab-button active" onclick="switchTab('text')">📝 Text</button>
+                    <button class="tab-button" onclick="switchTab('voice')">🎤 Voice</button>
+                </div>
+
+                <!-- Text Input -->
+                <div id="text-input" class="input-area active">
+                    <textarea 
+                        class="text-input" 
+                        id="text-message" 
+                        placeholder="Try: 'Schedule a dentist appointment tomorrow at 3pm' or 'What's on my calendar this week?'"
+                    ></textarea>
+                    <button class="submit-button" onclick="processText()">Send Command</button>
+                </div>
+
+                <!-- Voice Input -->
+                <div id="voice-input" class="input-area">
+                    <div class="voice-controls">
+                        <button class="record-button" id="record-btn" onclick="toggleRecording()">
+                            🎤
+                        </button>
+                        <p id="voice-status">Click to start recording</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Loading -->
+            <div class="loading" id="loading">
+                <div class="spinner"></div>
+                <p>Processing your request...</p>
+            </div>
+
+            <!-- Response -->
+            <div class="response-section" id="response" style="display: none;">
+                <div class="response-message" id="response-message"></div>
+                <div class="suggestions" id="suggestions" style="display: none;">
+                    <h4>💡 Suggestions:</h4>
+                    <ul class="suggestion-list" id="suggestion-list"></ul>
+                </div>
+            </div>
+
+            <!-- Examples -->
+            <div class="examples">
+                <h3>💡 Example Commands</h3>
+                <div class="example-grid">
+                    <div class="example-card">
+                        <h4>📅 Create Events</h4>
+                        <p>"Schedule a meeting tomorrow at 2pm"</p>
+                        <p>"Add dentist appointment on Friday at 3pm"</p>
+                        <p>"Book a dinner reservation for Saturday at 7pm"</p>
+                    </div>
+                    <div class="example-card">
+                        <h4>🔍 Check Calendar</h4>
+                        <p>"What's on my calendar today?"</p>
+                        <p>"Show my events this week"</p>
+                        <p>"Do I have any meetings tomorrow?"</p>
+                    </div>
+                    <div class="example-card">
+                        <h4>📱 SMS Commands</h4>
+                        <p>Text your commands to the connected phone number</p>
+                        <p>"Add soccer practice Tuesday 4pm"</p>
+                        <p>"What's my schedule tomorrow?"</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let isRecording = false;
+        let mediaRecorder = null;
+        let audioChunks = [];
+
+        function switchTab(tabName) {
+            // Hide all input areas
+            document.querySelectorAll('.input-area').forEach(area => {
+                area.classList.remove('active');
+            });
+            
+            // Remove active class from all tabs
+            document.querySelectorAll('.tab-button').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            
+            // Show selected tab
+            document.getElementById(tabName + '-input').classList.add('active');
+            event.target.classList.add('active');
+        }
+
+        async function processText() {
+            const message = document.getElementById('text-message').value.trim();
+            if (!message) {
+                showResponse('Please enter a command', false);
+                return;
+            }
+
+            showLoading(true);
+            
+            try {
+                const formData = new FormData();
+                formData.append('message', message);
+                
+                const response = await fetch('/api/text', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const result = await response.json();
+                showResponse(result.message, result.success, result.suggestions);
+            } catch (error) {
+                showResponse('Error processing command: ' + error.message, false);
+            } finally {
+                showLoading(false);
+            }
+        }
+
+        async function toggleRecording() {
+            if (!isRecording) {
+                await startRecording();
+            } else {
+                stopRecording();
+            }
+        }
+
+        async function startRecording() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                mediaRecorder = new MediaRecorder(stream);
+                audioChunks = [];
+
+                mediaRecorder.ondataavailable = (event) => {
+                    audioChunks.push(event.data);
+                };
+
+                mediaRecorder.onstop = async () => {
+                    const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
+                    await processAudioBlob(audioBlob);
+                };
+
+                mediaRecorder.start();
+                isRecording = true;
+                
+                document.getElementById('record-btn').classList.add('recording');
+                document.getElementById('voice-status').textContent = 'Recording... Click to stop';
+                
+            } catch (error) {
+                showResponse('Error accessing microphone: ' + error.message, false);
+            }
+        }
+
+        function stopRecording() {
+            if (mediaRecorder && isRecording) {
+                mediaRecorder.stop();
+                mediaRecorder.stream.getTracks().forEach(track => track.stop());
+                
+                isRecording = false;
+                document.getElementById('record-btn').classList.remove('recording');
+                document.getElementById('voice-status').textContent = 'Processing...';
+            }
+        }
+
+        async function processAudioBlob(audioBlob) {
+            showLoading(true);
+            
+            try {
+                const formData = new FormData();
+                formData.append('file', audioBlob, 'recording.wav');
+                
+                const response = await fetch('/api/voice', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const result = await response.json();
+                showResponse(result.message, result.success, result.suggestions);
+                document.getElementById('voice-status').textContent = 'Click to start recording';
+            } catch (error) {
+                showResponse('Error processing audio: ' + error.message, false);
+                document.getElementById('voice-status').textContent = 'Click to start recording';
+            } finally {
+                showLoading(false);
+            }
+        }
+
+        function showResponse(message, success, suggestions = null) {
+            const responseDiv = document.getElementById('response');
+            const messageDiv = document.getElementById('response-message');
+            const suggestionsDiv = document.getElementById('suggestions');
+            
+            messageDiv.textContent = message;
+            messageDiv.className = 'response-message ' + (success ? 'response-success' : 'response-error');
+            
+            if (suggestions && suggestions.length > 0) {
+                const suggestionList = document.getElementById('suggestion-list');
+                suggestionList.innerHTML = '';
+                
+                suggestions.forEach(suggestion => {
+                    const li = document.createElement('li');
+                    li.textContent = suggestion;
+                    suggestionList.appendChild(li);
+                });
+                
+                suggestionsDiv.style.display = 'block';
+            } else {
+                suggestionsDiv.style.display = 'none';
+            }
+            
+            responseDiv.style.display = 'block';
+            responseDiv.scrollIntoView({ behavior: 'smooth' });
+        }
+
+        function showLoading(show) {
+            document.getElementById('loading').style.display = show ? 'block' : 'none';
+        }
+
+        // Handle Enter key in text input
+        document.getElementById('text-message').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                processText();
+            }
+        });
+    </script>
+</body>
+</html> 
