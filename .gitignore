@@ -6,6 +6,7 @@ credentials.json
 .env
 .env.local
 .env.production
+token.json
 
 # Python
 __pycache__/

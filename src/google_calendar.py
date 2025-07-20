@@ -200,24 +200,31 @@ class GoogleCalendarManager:
                 start_date = datetime.utcnow()
             if not end_date:
                 end_date = start_date + timedelta(days=7)
-            
+
+            def format_gcal_time(dt):
+                if dt.tzinfo is None:
+                    return dt.isoformat() + 'Z'
+                else:
+                    return dt.isoformat()
+
             events_result = self.service.events().list(
                 calendarId=self.calendar_id,
-                timeMin=start_date.isoformat() + 'Z',
-                timeMax=end_date.isoformat() + 'Z',
+                timeMin=format_gcal_time(start_date),
+                timeMax=format_gcal_time(end_date),
                 maxResults=max_results,
                 singleEvents=True,
                 orderBy='startTime'
             ).execute()
-            
+
             events = events_result.get('items', [])
             calendar_events = []
-            
+
             for event in events:
                 start = event['start'].get('dateTime', event['start'].get('date'))
                 end = event['end'].get('dateTime', event['end'].get('date'))
                 
                 calendar_events.append(CalendarEvent(
+                    id=event.get('id'),
                     summary=event['summary'],
                     description=event.get('description'),
                     start_time=self._parse_event_time(start),
@@ -225,13 +232,13 @@ class GoogleCalendarManager:
                     location=event.get('location'),
                     attendees=[attendee['email'] for attendee in event.get('attendees', [])]
                 ))
-            
+
             return CalendarResponse(
                 success=True,
                 message=f"Found {len(calendar_events)} events",
                 events=calendar_events
             )
-            
+
         except HttpError as error:
             return CalendarResponse(
                 success=False,
@@ -284,6 +291,7 @@ class GoogleCalendarManager:
                 end = event['end'].get('dateTime', event['end'].get('date'))
                 
                 calendar_events.append(CalendarEvent(
+                    id=event.get('id'),
                     summary=event['summary'],
                     description=event.get('description'),
                     start_time=self._parse_event_time(start),
@@ -313,28 +321,42 @@ class GoogleCalendarManager:
             if not end_date:
                 end_date = start_date + timedelta(days=7)
 
+            print(f"[DEBUG] get_events_all_calendars: start_date={start_date} end_date={end_date}")
+
+            # Helper to format datetime for Google API
+            def format_gcal_time(dt):
+                if dt.tzinfo is None:
+                    return dt.isoformat() + 'Z'
+                else:
+                    return dt.isoformat()
+
             # Get all calendar IDs
             calendar_list_resp = self.list_calendars()
             if not calendar_list_resp.success or not getattr(calendar_list_resp, 'calendars', None):
+                print(f"[DEBUG] Failed to list calendars: {calendar_list_resp.error}")
                 return CalendarResponse(success=False, message="Failed to list calendars", error=calendar_list_resp.error)
             calendar_ids = [cal['id'] for cal in getattr(calendar_list_resp, 'calendars', [])]
+            print(f"[DEBUG] Querying {len(calendar_ids)} calendars: {calendar_ids}")
 
             all_events = []
             for cal_id in calendar_ids:
                 try:
+                    print(f"[DEBUG] Querying calendar: {cal_id}")
                     events_result = self.service.events().list(
                         calendarId=cal_id,
-                        timeMin=start_date.isoformat() + 'Z',
-                        timeMax=end_date.isoformat() + 'Z',
+                        timeMin=format_gcal_time(start_date),
+                        timeMax=format_gcal_time(end_date),
                         maxResults=max_results,
                         singleEvents=True,
                         orderBy='startTime'
                     ).execute()
                     events = events_result.get('items', [])
+                    print(f"[DEBUG] Found {len(events)} events in calendar {cal_id}")
                     for event in events:
                         start = event['start'].get('dateTime', event['start'].get('date'))
                         end = event['end'].get('dateTime', event['end'].get('date'))
                         all_events.append(CalendarEvent(
+                            id=event.get('id'),
                             summary=event['summary'],
                             description=event.get('description'),
                             start_time=self._parse_event_time(start),
@@ -342,17 +364,20 @@ class GoogleCalendarManager:
                             location=event.get('location'),
                             attendees=[attendee['email'] for attendee in event.get('attendees', [])]
                         ))
-                except Exception:
+                except Exception as e:
+                    print(f"[DEBUG] Error querying calendar {cal_id}: {e}")
                     continue  # Skip calendars that error out
 
             # Sort all events by start_time
             all_events.sort(key=lambda e: e.start_time)
+            print(f"[DEBUG] Total events found across all calendars: {len(all_events)}")
             return CalendarResponse(
                 success=True,
                 message=f"Found {len(all_events)} events across all calendars",
                 events=all_events
             )
         except Exception as error:
+            print(f"[DEBUG] Exception in get_events_all_calendars: {error}")
             return CalendarResponse(
                 success=False,
                 message="Failed to retrieve events from all calendars",

@@ -452,16 +452,22 @@
 
         async function startRecording() {
             try {
+                console.log('🎤 Starting recording...');
                 const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                console.log('✅ Microphone access granted');
+                
                 mediaRecorder = new MediaRecorder(stream);
                 audioChunks = [];
 
                 mediaRecorder.ondataavailable = (event) => {
+                    console.log('📦 Audio data available:', event.data.size, 'bytes');
                     audioChunks.push(event.data);
                 };
 
                 mediaRecorder.onstop = async () => {
+                    console.log('🛑 Recording stopped, processing audio...');
                     const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
+                    console.log('🎵 Audio blob created:', audioBlob.size, 'bytes');
                     await processAudioBlob(audioBlob);
                 };
 
@@ -470,8 +476,10 @@
                 
                 document.getElementById('record-btn').classList.add('recording');
                 document.getElementById('voice-status').textContent = 'Recording... Click to stop';
+                console.log('🎙️ Recording started successfully');
                 
             } catch (error) {
+                console.error('❌ Error starting recording:', error);
                 showResponse('Error accessing microphone: ' + error.message, false);
             }
         }
@@ -489,20 +497,30 @@
 
         async function processAudioBlob(audioBlob) {
             showLoading(true);
+            console.log('🚀 Sending audio to backend...');
             
             try {
                 const formData = new FormData();
                 formData.append('file', audioBlob, 'recording.wav');
+                console.log('📤 FormData created, sending to /api/voice');
                 
                 const response = await fetch('/api/voice', {
                     method: 'POST',
                     body: formData
                 });
                 
+                console.log('📥 Response received:', response.status, response.statusText);
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
                 const result = await response.json();
+                console.log('✅ Response parsed:', result);
                 showResponse(result.message, result.success, result.suggestions);
                 document.getElementById('voice-status').textContent = 'Click to start recording';
             } catch (error) {
+                console.error('❌ Error processing audio:', error);
                 showResponse('Error processing audio: ' + error.message, false);
                 document.getElementById('voice-status').textContent = 'Click to start recording';
             } finally {

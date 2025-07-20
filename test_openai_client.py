@@ -8,7 +8,7 @@ import sys
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from src.config import Config
-import openai
+from openai import OpenAI  # type: ignore
 
 def test_openai_client():
     """Test OpenAI client initialization"""
@@ -18,12 +18,12 @@ def test_openai_client():
     try:
         # Test 1: Basic initialization
         print("1. Testing basic OpenAI client...")
-        openai.api_key = Config.OPENAI_API_KEY
+        client = OpenAI(api_key=Config.OPENAI_API_KEY)
         print("✅ Basic client created successfully")
         
         # Test 2: Simple API call
         print("2. Testing simple API call...")
-        response = openai.ChatCompletion.create(
+        response = client.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=[
                 {"role": "user", "content": "Say hello"}

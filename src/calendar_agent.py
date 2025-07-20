@@ -1,4 +1,5 @@
-from typing import Optional
+from typing import Optional, Tuple, Union
+from datetime import datetime
 from .voice_processor import VoiceProcessor
 from .nlp_processor import NLPProcessor
 from .google_calendar import GoogleCalendarManager
@@ -16,19 +17,24 @@ class CalendarAgent:
     def process_voice_command(self, voice_input: VoiceInput) -> AgentResponse:
         """Process voice command and execute calendar action"""
         try:
+            print(f"🎤 Processing voice command: {len(voice_input.audio_data)} bytes, format: {voice_input.format}")
+            
             # Convert voice to text
             text = self.voice_processor.process_voice_input(voice_input)
             if not text:
                 return AgentResponse(
                     success=False,
-                    message="Could not understand voice input. Please try again.",
+                    message="Could not transcribe audio. Please check your recording and try again.",
                     confidence=0.0
                 )
+            
+            print(f"📝 Transcribed text: '{text}'")
             
             # Process the text command
             return self._process_text_command(text, InputType.VOICE)
             
         except Exception as e:
+            print(f"❌ Voice command error: {e}")
             return AgentResponse(
                 success=False,
                 message=f"Error processing voice command: {str(e)}",
@@ -187,10 +193,21 @@ class CalendarAgent:
                 if command.event and command.event.start_time and command.event.end_time:
                     start_date = command.event.start_time
                     end_date = command.event.end_time
+                    print(f"[DEBUG] Using event start_date: {start_date} end_date: {end_date}")
                     return self.calendar_manager.get_events_all_calendars(start_date=start_date, end_date=end_date)
                 elif command.query:
-                    return self.calendar_manager.search_events(command.query)
+                    # Try to parse date queries like "this week", "next week", etc.
+                    date_range = self._parse_date_query(command.query)
+                    if date_range:
+                        start_date, end_date = date_range
+                        print(f"[DEBUG] Using parsed query start_date: {start_date} end_date: {end_date}")
+                        return self.calendar_manager.get_events_all_calendars(start_date=start_date, end_date=end_date)
+                    else:
+                        # Fall back to text search if no date range found
+                        print(f"[DEBUG] Using text search for query: {command.query}")
+                        return self.calendar_manager.search_events(command.query)
                 else:
+                    print("[DEBUG] Using default get_events_all_calendars()")
                     return self.calendar_manager.get_events_all_calendars()
             
             elif command.action.value == "list":
@@ -260,6 +277,58 @@ class CalendarAgent:
         
         return suggestions
     
+    def _parse_date_query(self, query: str) -> Union[Tuple[datetime, datetime], None]:
+        """Parse date queries like 'this week', 'next week', 'today', etc."""
+        from datetime import datetime, timedelta
+        from dateutil import tz
+        
+        query_lower = query.lower().strip()
+        now = datetime.now()
+        
+        # Get Chicago timezone
+        chicago_tz = tz.gettz('America/Chicago')
+        
+        # Calculate current week boundaries (Monday to Sunday)
+        days_since_monday = now.weekday()
+        monday = now - timedelta(days=days_since_monday)
+        sunday = monday + timedelta(days=6)
+        
+        # Set time to start/end of day with timezone
+        monday = monday.replace(hour=0, minute=0, second=0, microsecond=0, tzinfo=chicago_tz)
+        sunday = sunday.replace(hour=23, minute=59, second=59, microsecond=999999, tzinfo=chicago_tz)
+        
+        # Use substring matching to detect relative date phrases anywhere in the query
+        if any(phrase in query_lower for phrase in ["this week", "the week", "week", "current week"]):
+            return (monday, sunday)
+        elif any(phrase in query_lower for phrase in ["next week"]):
+            next_monday = monday + timedelta(days=7)
+            next_sunday = sunday + timedelta(days=7)
+            return (next_monday, next_sunday)
+        elif any(phrase in query_lower for phrase in ["last week", "previous week"]):
+            last_monday = monday - timedelta(days=7)
+            last_sunday = sunday - timedelta(days=7)
+            return (last_monday, last_sunday)
+        elif any(phrase in query_lower for phrase in ["today"]):
+            today_start = now.replace(hour=0, minute=0, second=0, microsecond=0, tzinfo=chicago_tz)
+            today_end = now.replace(hour=23, minute=59, second=59, microsecond=999999, tzinfo=chicago_tz)
+            return (today_start, today_end)
+        elif any(phrase in query_lower for phrase in ["tomorrow"]):
+            tomorrow = now + timedelta(days=1)
+            tomorrow_start = tomorrow.replace(hour=0, minute=0, second=0, microsecond=0, tzinfo=chicago_tz)
+            tomorrow_end = tomorrow.replace(hour=23, minute=59, second=59, microsecond=999999, tzinfo=chicago_tz)
+            return (tomorrow_start, tomorrow_end)
+        elif any(phrase in query_lower for phrase in ["this month", "current month"]):
+            month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0, tzinfo=chicago_tz)
+            if now.month == 12:
+                next_month = now.replace(year=now.year + 1, month=1, day=1)
+            else:
+                next_month = now.replace(month=now.month + 1, day=1)
+            month_end = next_month - timedelta(days=1)
+            month_end = month_end.replace(hour=23, minute=59, second=59, microsecond=999999, tzinfo=chicago_tz)
+            return (month_start, month_end)
+        
+        return None
+
     def record_and_process(self, duration: int = 5) -> AgentResponse:
         """Record voice from microphone and process the command"""
         try:

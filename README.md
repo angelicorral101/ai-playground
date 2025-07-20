@@ -4,7 +4,7 @@ An intelligent calendar management system that uses AI to organize your family c
 
 ## ✨ Features
 
-- **🎤 Voice Commands**: Speak naturally to create, update, or check calendar events
+- **🎤 Voice Commands**: Speak naturally to create, update, or check calendar events (supports multiple audio formats)
 - **📝 Text Processing**: Send commands via text for quick calendar management
 - **📱 SMS Integration**: Manage your calendar through SMS messages (Twilio integration)
 - **🤖 AI-Powered**: Uses OpenAI's GPT and Whisper for natural language understanding
@@ -110,6 +110,8 @@ CALENDAR_ID=primary
 
 ### Voice Commands
 
+The system supports multiple audio formats including WAV, MP3, M4A, AAC, OGG, FLAC, and WMA. Audio files are automatically converted to WAV format before processing with OpenAI Whisper.
+
 Try these natural language commands:
 
 **Creating Events:**
@@ -167,7 +169,7 @@ main.py               # Application entry point
 
 ### Key Components
 
-1. **VoiceProcessor**: Handles speech-to-text conversion using OpenAI Whisper
+1. **VoiceProcessor**: Handles speech-to-text conversion using OpenAI Whisper with automatic audio format conversion
 2. **NLPProcessor**: Processes natural language commands using OpenAI GPT
 3. **GoogleCalendarManager**: Manages Google Calendar operations
 4. **CalendarAgent**: Orchestrates all components and provides the main interface

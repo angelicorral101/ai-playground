@@ -7,6 +7,8 @@ A voice and text-powered calendar management system that integrates with Google 
 import uvicorn
 import sys
 import os
+import warnings
+warnings.filterwarnings("ignore", message=".*urllib3 v2 only supports OpenSSL 1.1.1+.*")
 
 # Add src to Python path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))

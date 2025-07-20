@@ -16,6 +16,7 @@ class CalendarAction(str, Enum):
     LIST = "list"
 
 class CalendarEvent(BaseModel):
+    id: Optional[str] = None  # Google Calendar event ID
     summary: str
     description: Optional[str] = None
     start_time: datetime
