@@ -214,6 +214,140 @@ async def process_voice_file(request: Request):
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.post("/api/conversation/start")
+async def start_conversation(user_id: Optional[str] = Form(None)):
+    """Start a new conversation"""
+    try:
+        conversation_id = agent.start_conversation(user_id)
+        return {
+            "success": True,
+            "conversation_id": conversation_id,
+            "message": "Conversation started successfully"
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/conversation/voice")
+async def process_conversational_voice(request: Request):
+    """Process voice input in a conversational context"""
+    try:
+        # Get parameters from headers
+        conversation_id = request.headers.get('X-Conversation-ID')
+        voice = request.headers.get('X-Voice', 'alloy')
+        model = request.headers.get('X-Model', 'tts-1')
+        
+        if not conversation_id:
+            raise HTTPException(status_code=400, detail="X-Conversation-ID header required")
+        
+        # Get the filename from headers
+        filename = request.headers.get('X-Filename', 'voice_command.m4a')
+        
+        # Read the binary data directly
+        audio_data = await request.body()
+        
+        if len(audio_data) == 0:
+            raise HTTPException(status_code=400, detail="Empty audio file received")
+        
+        # Detect audio format from filename
+        format = agent.voice_processor.detect_audio_format(audio_data, filename)
+        
+        # Create VoiceInput object
+        voice_input = VoiceInput(audio_data=audio_data, format=format)
+        
+        # Process conversational voice
+        response = agent.process_conversational_voice(voice_input, conversation_id, voice, model)
+        
+        return response
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/conversation/text")
+async def process_conversational_text(
+    conversation_id: str = Form(...),
+    message: str = Form(...),
+    voice: Optional[str] = Form('alloy'),
+    model: Optional[str] = Form('tts-1')
+):
+    """Process text input in a conversational context"""
+    try:
+        print(f"🎯 API: Processing conversational text")
+        print(f"🎯 API: conversation_id={conversation_id}")
+        print(f"🎯 API: message='{message}'")
+        print(f"🎯 API: voice={voice}, model={model}")
+        
+        response = agent.process_conversational_text(message, conversation_id, voice, model)
+        print(f"🎯 API: Response success={response.success}")
+        return response
+    except Exception as e:
+        print(f"🎯 API: Error: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/conversation/{conversation_id}/history")
+async def get_conversation_history(conversation_id: str):
+    """Get conversation history"""
+    try:
+        history = agent.get_conversation_history(conversation_id)
+        return {
+            "success": True,
+            "conversation_id": conversation_id,
+            "history": history
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/api/conversation/{conversation_id}")
+async def delete_conversation(conversation_id: str):
+    """Delete a conversation"""
+    try:
+        success = agent.delete_conversation(conversation_id)
+        return {
+            "success": success,
+            "message": "Conversation deleted" if success else "Conversation not found"
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/conversations")
+async def list_conversations(user_id: Optional[str] = None):
+    """List conversations for a user"""
+    try:
+        conversations = agent.list_conversations(user_id)
+        return {
+            "success": True,
+            "conversations": conversations
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/tts/voices")
+async def get_available_voices():
+    """Get available TTS voices"""
+    try:
+        voices = agent.tts_processor.get_available_voices()
+        return {
+            "success": True,
+            "voices": voices
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/tts/models")
+async def get_available_models():
+    """Get available TTS models"""
+    try:
+        models = agent.tts_processor.get_available_models()
+        return {
+            "success": True,
+            "models": models
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 # WebSocket for real-time communication
 class ConnectionManager:
     def __init__(self):

@@ -3,6 +3,8 @@ from datetime import datetime
 from .voice_processor import VoiceProcessor
 from .nlp_processor import NLPProcessor
 from .google_calendar import GoogleCalendarManager
+from .conversation_manager import ConversationManager
+from .tts_processor import TTSProcessor
 from .models import (
     VoiceInput, TextInput, SMSInput, ProcessedCommand, 
     AgentResponse, CalendarResponse, InputType, CalendarEvent
@@ -13,6 +15,8 @@ class CalendarAgent:
         self.voice_processor = VoiceProcessor()
         self.nlp_processor = NLPProcessor()
         self.calendar_manager = GoogleCalendarManager()
+        self.conversation_manager = ConversationManager()
+        self.tts_processor = TTSProcessor()
     
     def process_voice_command(self, voice_input: VoiceInput) -> AgentResponse:
         """Process voice command and execute calendar action"""
@@ -347,4 +351,196 @@ class CalendarAgent:
                 success=False,
                 message=f"Error recording voice: {str(e)}",
                 confidence=0.0
-            ) 
+            )
+    
+    def start_conversation(self, user_id: Optional[str] = None) -> str:
+        """Start a new conversation and return conversation ID"""
+        conversation_id = self.conversation_manager.create_conversation(user_id)
+        print(f"💬 Started new conversation: {conversation_id}")
+        return conversation_id
+    
+    def process_conversational_voice(self, voice_input: VoiceInput, conversation_id: str, 
+                                   voice: str = None, model: str = None) -> AgentResponse:
+        """Process voice input in a conversational context and return voice response"""
+        try:
+            print(f"💬 Processing conversational voice for conversation: {conversation_id}")
+            
+            # Convert voice to text
+            text = self.voice_processor.process_voice_input(voice_input)
+            if not text:
+                return AgentResponse(
+                    success=False,
+                    message="Could not transcribe audio. Please try again.",
+                    confidence=0.0
+                )
+            
+            print(f"📝 Transcribed text: '{text}'")
+            
+            # Add user message to conversation
+            self.conversation_manager.add_message(conversation_id, 'user', text, 'voice')
+            
+            # Get calendar context if the message mentions calendar or time-related words
+            calendar_context = None
+            calendar_keywords = ['calendar', 'event', 'schedule', 'appointment', 'meeting', 'date', 'when', 'what', 'have', 'got', 'doing']
+            detected_keywords = [word for word in calendar_keywords if word in text.lower()]
+            if detected_keywords:
+                print(f"📅 Message mentions calendar/time keywords: {detected_keywords}")
+                # Parse date queries like "tomorrow", "today", etc.
+                date_range = self._parse_date_query(text)
+                print(f"📅 Parsed date range: {date_range}")
+                
+                if date_range:
+                    # Query for specific date range
+                    start_date, end_date = date_range
+                    calendar_response = self.calendar_manager.get_events_all_calendars(
+                        start_date=start_date,
+                        end_date=end_date,
+                        max_results=10
+                    )
+                    print(f"📅 Querying calendar for date range: {start_date} to {end_date}")
+                else:
+                    # Get recent calendar events
+                    calendar_response = self.calendar_manager.get_events_all_calendars(
+                        max_results=5
+                    )
+                
+                if calendar_response.success and calendar_response.events:
+                    calendar_context = {
+                        'query_date_range': date_range,
+                        'events': [
+                            {
+                                'summary': event.summary,
+                                'start_time': event.start_time.isoformat() if event.start_time else None,
+                                'end_time': event.end_time.isoformat() if event.end_time else None
+                            }
+                            for event in calendar_response.events
+                        ]
+                    }
+            
+            # Generate conversational response
+            response_text = self.conversation_manager.generate_response(
+                conversation_id, text, calendar_context
+            )
+            
+            print(f"🤖 AI Response: '{response_text}'")
+            
+            # Convert response to speech
+            audio_data = self.tts_processor.text_to_speech(response_text, voice, model)
+            
+            if audio_data:
+                print(f"🎤 Generated speech: {len(audio_data)} bytes")
+                return AgentResponse(
+                    success=True,
+                    message=response_text,
+                    confidence=0.9,
+                    audio_response=audio_data
+                )
+            else:
+                print("⚠️  TTS failed, returning text only")
+                return AgentResponse(
+                    success=True,
+                    message=response_text,
+                    confidence=0.9
+                )
+            
+        except Exception as e:
+            print(f"❌ Conversational voice error: {e}")
+            return AgentResponse(
+                success=False,
+                message=f"Error processing conversational voice: {str(e)}",
+                confidence=0.0
+            )
+    
+    def process_conversational_text(self, text: str, conversation_id: str,
+                                  voice: str = None, model: str = None) -> AgentResponse:
+        """Process text input in a conversational context and return voice response"""
+        try:
+            print(f"💬 Processing conversational text for conversation: {conversation_id}")
+            print(f"📝 Text: '{text}'")
+            
+            # Add user message to conversation
+            self.conversation_manager.add_message(conversation_id, 'user', text, 'text')
+            print(f"✅ Added user message to conversation")
+            
+            # Get calendar context if the message mentions calendar or time-related words
+            calendar_context = None
+            calendar_keywords = ['calendar', 'event', 'schedule', 'appointment', 'meeting', 'date', 'when', 'what', 'have', 'got', 'doing']
+            detected_keywords = [word for word in calendar_keywords if word in text.lower()]
+            if detected_keywords:
+                print(f"📅 Message mentions calendar/time keywords: {detected_keywords}")
+                # Parse date queries like "tomorrow", "today", etc.
+                date_range = self._parse_date_query(text)
+                
+                if date_range:
+                    # Query for specific date range
+                    start_date, end_date = date_range
+                    calendar_response = self.calendar_manager.get_events_all_calendars(
+                        start_date=start_date,
+                        end_date=end_date,
+                        max_results=10
+                    )
+                    print(f"📅 Querying calendar for date range: {start_date} to {end_date}")
+                else:
+                    # Get recent calendar events
+                    calendar_response = self.calendar_manager.get_events_all_calendars(
+                        max_results=5
+                    )
+                
+                if calendar_response.success and calendar_response.events:
+                    calendar_context = {
+                        'query_date_range': date_range,
+                        'events': [
+                            {
+                                'summary': event.summary,
+                                'start_time': event.start_time.isoformat() if event.start_time else None,
+                                'end_time': event.end_time.isoformat() if event.end_time else None
+                            }
+                            for event in calendar_response.events
+                        ]
+                    }
+            
+            # Generate conversational response
+            response_text = self.conversation_manager.generate_response(
+                conversation_id, text, calendar_context
+            )
+            
+            print(f"🤖 AI Response: '{response_text}'")
+            
+            # Convert response to speech
+            audio_data = self.tts_processor.text_to_speech(response_text, voice, model)
+            
+            if audio_data:
+                print(f"🎤 Generated speech: {len(audio_data)} bytes")
+                return AgentResponse(
+                    success=True,
+                    message=response_text,
+                    confidence=0.9,
+                    audio_response=audio_data
+                )
+            else:
+                print("⚠️  TTS failed, returning text only")
+                return AgentResponse(
+                    success=True,
+                    message=response_text,
+                    confidence=0.9
+                )
+            
+        except Exception as e:
+            print(f"❌ Conversational text error: {e}")
+            return AgentResponse(
+                success=False,
+                message=f"Error processing conversational text: {str(e)}",
+                confidence=0.0
+            )
+    
+    def get_conversation_history(self, conversation_id: str) -> list:
+        """Get conversation history"""
+        return self.conversation_manager.get_conversation_history(conversation_id)
+    
+    def delete_conversation(self, conversation_id: str) -> bool:
+        """Delete a conversation"""
+        return self.conversation_manager.delete_conversation(conversation_id)
+    
+    def list_conversations(self, user_id: Optional[str] = None) -> list:
+        """List conversations for a user"""
+        return self.conversation_manager.list_conversations(user_id) 

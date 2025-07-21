@@ -61,4 +61,5 @@ class AgentResponse(BaseModel):
     message: str
     calendar_response: Optional[CalendarResponse] = None
     confidence: float
-    suggestions: Optional[List[str]] = None 
+    suggestions: Optional[List[str]] = None
+    audio_response: Optional[bytes] = None  # Audio data for voice responses 
