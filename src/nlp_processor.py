@@ -188,12 +188,14 @@ For specific dates mentioned in queries (like "July 21st", "December 25th", etc.
                 if event_data.get('start_time'):
                     try:
                         start_time = parser.parse(event_data.get('start_time'))
-                    except:
+                    except (ValueError, TypeError, OverflowError) as e:
+                        print(f"❌ Error parsing start_time '{event_data.get('start_time')}': {e}")
                         start_time = datetime.now()
                 if event_data.get('end_time'):
                     try:
                         end_time = parser.parse(event_data.get('end_time'))
-                    except:
+                    except (ValueError, TypeError, OverflowError) as e:
+                        print(f"❌ Error parsing end_time '{event_data.get('end_time')}': {e}")
                         end_time = start_time + timedelta(hours=1)
                 reminders = None
                 if event_data.get('reminders'):

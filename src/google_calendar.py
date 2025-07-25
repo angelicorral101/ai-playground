@@ -43,7 +43,10 @@ class GoogleCalendarManager:
             if creds and creds.expired and creds.refresh_token:
                 creds.refresh(Request())
             else:
-                # Create credentials file for OAuth flow
+                # Create temporary credentials file for OAuth flow with proper security
+                import tempfile
+                import stat
+                
                 credentials_data = {
                     "installed": {
                         "client_id": Config.GOOGLE_CLIENT_ID,
@@ -54,11 +57,24 @@ class GoogleCalendarManager:
                     }
                 }
                 
-                with open('credentials.json', 'w') as f:
-                    json.dump(credentials_data, f)
+                # Create temporary file with restricted permissions
+                with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as temp_creds:
+                    json.dump(credentials_data, temp_creds)
+                    temp_creds_path = temp_creds.name
                 
-                flow = InstalledAppFlow.from_client_secrets_file('credentials.json', self.scopes)
-                creds = flow.run_local_server(port=0)
+                # Set restrictive permissions (owner read/write only)
+                os.chmod(temp_creds_path, stat.S_IRUSR | stat.S_IWUSR)
+                
+                try:
+                    flow = InstalledAppFlow.from_client_secrets_file(temp_creds_path, self.scopes)
+                    creds = flow.run_local_server(port=0)
+                finally:
+                    # Clean up temporary credentials file
+                    try:
+                        os.unlink(temp_creds_path)
+                        print(f"🗑️  Cleaned up temporary credentials file")
+                    except OSError as e:
+                        print(f"⚠️  Warning: Could not delete temporary credentials file: {e}")
             
             # Save the credentials for the next run
             with open(token_path, 'w') as token:

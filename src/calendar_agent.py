@@ -103,13 +103,15 @@ class CalendarAgent:
                                 if event_data.get('start_time'):
                                     try:
                                         start_time = parser.parse(str(event_data.get('start_time')))
-                                    except:
+                                    except (ValueError, TypeError, OverflowError) as e:
+                                        print(f"❌ Error parsing start_time '{event_data.get('start_time')}': {e}")
                                         start_time = datetime.now()
                                 
                                 if event_data.get('end_time'):
                                     try:
                                         end_time = parser.parse(str(event_data.get('end_time')))
-                                    except:
+                                    except (ValueError, TypeError, OverflowError) as e:
+                                        print(f"❌ Error parsing end_time '{event_data.get('end_time')}': {e}")
                                         end_time = start_time + timedelta(hours=1)
                                 
                                 # Parse reminders if provided

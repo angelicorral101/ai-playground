@@ -18,10 +18,10 @@ app = FastAPI(title="AI Family Calendar Agent", version="1.0.0")
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allows all origins
+    allow_origins=["http://localhost:8000", "http://127.0.0.1:8000"],  # Only allow local origins
     allow_credentials=True,
-    allow_methods=["*"],  # Allows all methods
-    allow_headers=["*"],  # Allows all headers
+    allow_methods=["GET", "POST", "PUT", "DELETE"],  # Only allow necessary methods
+    allow_headers=["Content-Type", "Authorization"],  # Only allow necessary headers
 )
 
 # Initialize the calendar agent
@@ -74,14 +74,16 @@ async def get_events(
         if start_date:
             try:
                 start_dt = parser.parse(start_date)
-            except:
-                raise HTTPException(status_code=400, detail="Invalid start_date format")
+            except (ValueError, TypeError, OverflowError) as e:
+                print(f"❌ Error parsing start_date '{start_date}': {e}")
+                raise HTTPException(status_code=400, detail=f"Invalid start_date format: {start_date}")
         
         if end_date:
             try:
                 end_dt = parser.parse(end_date)
-            except:
-                raise HTTPException(status_code=400, detail="Invalid end_date format")
+            except (ValueError, TypeError, OverflowError) as e:
+                print(f"❌ Error parsing end_date '{end_date}': {e}")
+                raise HTTPException(status_code=400, detail=f"Invalid end_date format: {end_date}")
         
         # Get events from calendar manager
         calendar_response = agent.calendar_manager.get_events_all_calendars(
