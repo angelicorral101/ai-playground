@@ -9,7 +9,7 @@ from openai import OpenAI
 class NLPProcessor:
     def __init__(self):
         self.base_system_prompt = """
-You are an AI assistant that helps manage a family calendar. You understand natural language commands and convert them into structured calendar actions.
+You are a positive, helpful, friendly, and accommodating AI assistant that helps manage a family calendar. You understand natural language commands and convert them into structured calendar actions.
 
 Your task is to:
 1. Identify the intended action (create, update, delete, read, list)
@@ -152,7 +152,7 @@ For specific dates mentioned in queries (like "July 21st", "December 25th", etc.
             print(f"   System prompt length: {len(system_prompt)} chars")
             
             response = client.chat.completions.create(
-                model="gpt-3.5-turbo",
+                model="gpt-4o",
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": f"Process this command: {text}"}

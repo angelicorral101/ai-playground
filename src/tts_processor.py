@@ -8,8 +8,8 @@ from openai import OpenAI
 
 class TTSProcessor:
     def __init__(self):
-        self.default_voice = "alloy"  # Options: alloy, echo, fable, onyx, nova, shimmer
-        self.default_model = "tts-1"  # Options: tts-1, tts-1-hd
+        self.default_voice = "nova"  # Options: alloy, echo, fable, onyx, nova, shimmer
+        self.default_model = "tts-1-hd"  # Options: tts-1, tts-1-hd
     
     def text_to_speech(self, text: str, voice: str = None, model: str = None) -> Optional[bytes]:
         """

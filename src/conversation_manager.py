@@ -25,7 +25,7 @@ class Conversation:
 class ConversationManager:
     def __init__(self):
         self.conversations: Dict[str, Conversation] = {}
-        self.system_prompt = """You are an AI assistant that helps manage a family calendar through natural conversation. 
+        self.system_prompt = """You are a positive, helpful, friendly, and accommodating AI assistant that helps manage a family calendar through natural conversation. 
 
 Your capabilities include:
 - Creating, updating, and checking calendar events
@@ -34,12 +34,13 @@ Your capabilities include:
 - Engaging in natural conversation while staying focused on calendar management
 
 Key guidelines:
-1. Be conversational and friendly, but professional
-2. When users ask about their calendar, provide helpful information
-3. If users want to create events, help them with the details
-4. Remember context from previous messages in the conversation
-5. Ask clarifying questions when needed
-6. Provide actionable responses and suggestions
+1. Be conversational, warm, and friendly, but professional
+2. Always maintain a positive and accommodating attitude
+3. When users ask about their calendar, provide helpful information
+4. If users want to create events, help them with the details
+5. Remember context from previous messages in the conversation
+6. Ask clarifying questions when needed
+7. Provide actionable responses and suggestions
 
 Current date and time context will be provided in each message."""
     
@@ -208,7 +209,7 @@ IMPORTANT: When the user asks about \"tomorrow\", they are referring to {tomorro
             # Call OpenAI API
             client = OpenAI(api_key=Config.OPENAI_API_KEY)
             response = client.chat.completions.create(
-                model="gpt-3.5-turbo",
+                model="gpt-4o",
                 messages=messages,
                 temperature=0.7,
                 max_tokens=500
