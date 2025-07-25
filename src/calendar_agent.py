@@ -282,9 +282,10 @@ class CalendarAgent:
         return suggestions
     
     def _parse_date_query(self, query: str) -> Union[Tuple[datetime, datetime], None]:
-        """Parse date queries like 'this week', 'next week', 'today', etc."""
+        """Parse date queries like 'this week', 'next week', 'today', etc., and weekday names like 'Wednesday'."""
         from datetime import datetime, timedelta
         from dateutil import tz
+        import re
         
         query_lower = query.lower().strip()
         now = datetime.now()
@@ -330,6 +331,23 @@ class CalendarAgent:
             month_end = next_month - timedelta(days=1)
             month_end = month_end.replace(hour=23, minute=59, second=59, microsecond=999999, tzinfo=chicago_tz)
             return (month_start, month_end)
+        
+        # Handle weekday queries (e.g., 'on Wednesday', 'next Wednesday')
+        weekdays = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
+        for i, weekday in enumerate(weekdays):
+            # Regex to match 'on wednesday', 'next wednesday', or just 'wednesday'
+            if re.search(rf"(on |next )?{weekday}", query_lower):
+                # Calculate days until the next occurrence of the weekday
+                days_ahead = (i - now.weekday() + 7) % 7
+                if days_ahead == 0 and "next" in query_lower:
+                    days_ahead = 7  # If today is the day and 'next' is specified, go to next week
+                elif days_ahead == 0:
+                    # If today is the day and 'next' is not specified, use today
+                    pass
+                target_date = now + timedelta(days=days_ahead)
+                target_start = target_date.replace(hour=0, minute=0, second=0, microsecond=0, tzinfo=chicago_tz)
+                target_end = target_date.replace(hour=23, minute=59, second=59, microsecond=999999, tzinfo=chicago_tz)
+                return (target_start, target_end)
         
         return None
 
@@ -426,21 +444,59 @@ class CalendarAgent:
             
             # Convert response to speech
             audio_data = self.tts_processor.text_to_speech(response_text, voice, model)
-            
+
+            # Prepare queried_date and queried_view for UI
+            queried_date = None
+            queried_view = None
+            is_month_query = False
+            if detected_keywords:
+                if 'date_range' in locals() and date_range:
+                    # If it's a range, return both as ISO
+                    queried_date = [start_date.isoformat(), end_date.isoformat()]
+                    # Determine if it's a week or month view
+                    if (end_date - start_date).days >= 27:
+                        queried_view = 'month'
+                        is_month_query = True
+                    elif (end_date - start_date).days >= 6:
+                        queried_view = 'week'
+                    else:
+                        queried_view = 'day'
+                elif 'date_range' in locals() and date_range is not None:
+                    queried_date = date_range.isoformat() if hasattr(date_range, 'isoformat') else str(date_range)
+                    queried_view = 'day'
+
+            # If it's a month query, override the response text and ensure all month events are included
+            if is_month_query:
+                response_text = "Here’s your calendar for this month. Is there a specific week or day you’d like to review?"
+                # Query all events for the month if not already done
+                if not (calendar_response and calendar_response.success and calendar_response.events):
+                    # Use the parsed month range
+                    calendar_response = self.calendar_manager.get_events_all_calendars(
+                        start_date=start_date,
+                        end_date=end_date,
+                        max_results=100
+                    )
+
             if audio_data:
                 print(f"🎤 Generated speech: {len(audio_data)} bytes")
                 return AgentResponse(
                     success=True,
                     message=response_text,
                     confidence=0.9,
-                    audio_response=audio_data
+                    audio_response=audio_data,
+                    queried_date=queried_date,
+                    queried_view=queried_view,
+                    calendar_response=calendar_response
                 )
             else:
                 print("⚠️  TTS failed, returning text only")
                 return AgentResponse(
                     success=True,
                     message=response_text,
-                    confidence=0.9
+                    confidence=0.9,
+                    queried_date=queried_date,
+                    queried_view=queried_view,
+                    calendar_response=calendar_response
                 )
             
         except Exception as e:
@@ -508,21 +564,48 @@ class CalendarAgent:
             
             # Convert response to speech
             audio_data = self.tts_processor.text_to_speech(response_text, voice, model)
-            
+
+            # Prepare queried_date and queried_view for UI
+            queried_date = None
+            queried_view = None
+            is_month_query = False
+            if detected_keywords:
+                if 'date_range' in locals() and date_range:
+                    queried_date = [start_date.isoformat(), end_date.isoformat()]
+                    # Determine if it's a week or month view
+                    if (end_date - start_date).days >= 27:
+                        queried_view = 'month'
+                        is_month_query = True
+                    elif (end_date - start_date).days >= 6:
+                        queried_view = 'week'
+                    else:
+                        queried_view = 'day'
+                elif 'date_range' in locals() and date_range is not None:
+                    queried_date = date_range.isoformat() if hasattr(date_range, 'isoformat') else str(date_range)
+                    queried_view = 'day'
+
+            # If it's a month query, override the response text
+            if is_month_query:
+                response_text = "Here’s your calendar for this month. Is there a specific week or day you’d like to review?"
+
             if audio_data:
                 print(f"🎤 Generated speech: {len(audio_data)} bytes")
                 return AgentResponse(
                     success=True,
                     message=response_text,
                     confidence=0.9,
-                    audio_response=audio_data
+                    audio_response=audio_data,
+                    queried_date=queried_date,
+                    queried_view=queried_view
                 )
             else:
                 print("⚠️  TTS failed, returning text only")
                 return AgentResponse(
                     success=True,
                     message=response_text,
-                    confidence=0.9
+                    confidence=0.9,
+                    queried_date=queried_date,
+                    queried_view=queried_view
                 )
             
         except Exception as e:

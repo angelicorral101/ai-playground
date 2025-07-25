@@ -26,7 +26,8 @@ def test_calendar_context():
         "When is my next meeting?",
         "What am I doing tomorrow?",
         "Got anything planned?",
-        "What's happening tomorrow?"
+        "What's happening tomorrow?",
+        "what's on my calendar for the month"
     ]
     
     for query in test_queries:
@@ -44,6 +45,12 @@ def test_calendar_context():
             )
             
             print(f"✅ Response: '{response.message[:100]}...'")
+            if response.queried_view:
+                print(f"   queried_view: {response.queried_view}")
+            if response.queried_date:
+                print(f"   queried_date: {response.queried_date}")
+            if response.calendar_response and response.calendar_response.events:
+                print(f"   events returned: {len(response.calendar_response.events)}")
             
         except Exception as e:
             print(f"❌ Error: {e}")

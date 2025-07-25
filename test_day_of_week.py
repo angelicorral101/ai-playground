@@ -34,5 +34,24 @@ IMPORTANT: When the user asks about "tomorrow", they are referring to {tomorrow.
 """
     print(time_context)
 
+    # Test weekday queries
+    print("\n🎯 Testing weekday queries:")
+    queries = [
+        "Wednesday",
+        "on Wednesday",
+        "next Wednesday",
+        "wednesday schedule",
+        "what's on my calendar on Wednesday?"
+    ]
+    from src.calendar_agent import CalendarAgent
+    agent = CalendarAgent()
+    for q in queries:
+        result = agent._parse_date_query(q)
+        if result:
+            start, end = result
+            print(f"Query: '{q}' => {start.strftime('%A, %B %d, %Y')} to {end.strftime('%A, %B %d, %Y')}")
+        else:
+            print(f"Query: '{q}' => No date found")
+
 if __name__ == "__main__":
     test_day_of_week() 

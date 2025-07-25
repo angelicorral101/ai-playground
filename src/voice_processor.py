@@ -9,6 +9,7 @@ from pydub import AudioSegment
 from pydub.exceptions import CouldntDecodeError
 from .config import Config
 from .models import VoiceInput
+from openai import OpenAI
 
 class VoiceProcessor:
     def __init__(self):
@@ -128,9 +129,9 @@ class VoiceProcessor:
                 temp_file_path = temp_file.name
             
             # Use OpenAI Whisper API for transcription
-            openai.api_key = Config.OPENAI_API_KEY
+            client = OpenAI(api_key=Config.OPENAI_API_KEY)
             with open(temp_file_path, "rb") as audio_file:
-                transcript = openai.Audio.transcribe(
+                transcript = client.audio.transcriptions.create(
                     model="whisper-1",
                     file=audio_file,
                     response_format="text"

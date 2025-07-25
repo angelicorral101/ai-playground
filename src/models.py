@@ -62,4 +62,6 @@ class AgentResponse(BaseModel):
     calendar_response: Optional[CalendarResponse] = None
     confidence: float
     suggestions: Optional[List[str]] = None
-    audio_response: Optional[bytes] = None  # Audio data for voice responses 
+    audio_response: Optional[bytes] = None  # Audio data for voice responses
+    queried_date: Optional[Any] = None  # ISO string or list of ISO strings for UI rendering
+    queried_view: Optional[str] = None  # e.g. 'week', 'day', etc. for UI rendering 

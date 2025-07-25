@@ -4,6 +4,7 @@ import os
 from typing import Optional, Tuple
 from .config import Config
 import openai
+from openai import OpenAI
 
 class TTSProcessor:
     def __init__(self):
@@ -27,8 +28,8 @@ class TTSProcessor:
             print(f"🔊 Voice: {voice}, Model: {model}")
             
             # Call OpenAI TTS API
-            openai.api_key = Config.OPENAI_API_KEY
-            response = openai.Audio.speech.create(
+            client = OpenAI(api_key=Config.OPENAI_API_KEY)
+            response = client.audio.speech.create(
                 model=model,
                 voice=voice,
                 input=text

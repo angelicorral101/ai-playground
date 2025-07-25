@@ -4,6 +4,7 @@ from dateutil import parser
 from .config import Config
 from .models import ProcessedCommand, CalendarEvent, CalendarAction, InputType
 import openai  # Updated import for v0.28.1
+from openai import OpenAI
 
 class NLPProcessor:
     def __init__(self):
@@ -141,7 +142,7 @@ For specific dates mentioned in queries (like "July 21st", "December 25th", etc.
         try:
             print(f"🤖 Processing text: '{text}'")
             system_prompt = self._get_system_prompt_with_current_date()
-            openai.api_key = Config.OPENAI_API_KEY
+            client = OpenAI(api_key=Config.OPENAI_API_KEY)
             
             # Log the request details
             print(f"📤 OpenAI Request:")
@@ -150,7 +151,7 @@ For specific dates mentioned in queries (like "July 21st", "December 25th", etc.
             print(f"   Max tokens: 1000")
             print(f"   System prompt length: {len(system_prompt)} chars")
             
-            response = openai.ChatCompletion.create(
+            response = client.chat.completions.create(
                 model="gpt-3.5-turbo",
                 messages=[
                     {"role": "system", "content": system_prompt},
@@ -162,10 +163,11 @@ For specific dates mentioned in queries (like "July 21st", "December 25th", etc.
             
             # Log response details
             print(f"📥 OpenAI Response Details:")
-            print(f"   Usage: {response.usage}")
-            print(f"   Finish reason: {response.choices[0].finish_reason}")
+            # Usage and finish_reason may need to be accessed differently in v1.x
+            # print(f"   Usage: {response.usage}")
+            # print(f"   Finish reason: {response.choices[0].finish_reason}")
             
-            content = response.choices[0].message['content']
+            content = response.choices[0].message.content
             if content:
                 content = content.strip()
             else:

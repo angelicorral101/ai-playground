@@ -4,6 +4,7 @@ from typing import List, Dict, Optional, Any
 from dataclasses import dataclass, asdict
 from .config import Config
 import openai
+from openai import OpenAI
 
 @dataclass
 class Message:
@@ -166,28 +167,35 @@ Current date and time context will be provided in each message."""
                 })
                 print(f"📅 Added calendar context")
             
-            # Add current date/time context with explicit tomorrow calculation
+            # Add current date/time context with explicit tomorrow/week/month calculation
             from datetime import timedelta
             current_time = datetime.now()
             tomorrow = current_time + timedelta(days=1)
-            
-            time_context = f"""
+
+            # Check for month context in calendar_context
+            month_context = None
+            if calendar_context and 'query_date_range' in calendar_context and calendar_context['query_date_range']:
+                qdr = calendar_context['query_date_range']
+                # If it's a month (range >= 27 days), set month_context
+                if isinstance(qdr, (list, tuple)) and len(qdr) == 2:
+                    start, end = qdr
+                    if hasattr(start, 'isoformat') and hasattr(end, 'isoformat') and (end - start).days >= 27:
+                        month_context = (start, end)
+
+            if month_context:
+                # Use month context for system message
+                start, end = month_context
+                time_context = f"""
+Current month: {start.strftime('%B %d, %Y')} to {end.strftime('%B %d, %Y')}
+IMPORTANT: All queries refer to this month range.
+"""
+            else:
+                time_context = f"""
 Current date and time: {current_time.strftime('%Y-%m-%d %H:%M:%S')}
 Today: {current_time.strftime('%A, %B %d, %Y')}
 Tomorrow: {tomorrow.strftime('%A, %B %d, %Y')}
 
-IMPORTANT: When the user asks about "tomorrow", they are referring to {tomorrow.strftime('%A, %B %d, %Y')}.
-
-DAY OF WEEK REFERENCE:
-- July 20, 2025: Sunday
-- July 21, 2025: Monday
-- July 22, 2025: Tuesday
-- July 23, 2025: Wednesday
-- July 24, 2025: Thursday
-- July 25, 2025: Friday
-- July 26, 2025: Saturday
-
-When mentioning dates, always use the correct day of the week from this reference.
+IMPORTANT: When the user asks about \"tomorrow\", they are referring to {tomorrow.strftime('%A, %B %d, %Y')}.
 """
             messages.append({
                 'role': 'system',
@@ -198,15 +206,15 @@ When mentioning dates, always use the correct day of the week from this referenc
             print(f"🤖 Calling OpenAI API with {len(messages)} messages...")
             
             # Call OpenAI API
-            openai.api_key = Config.OPENAI_API_KEY
-            response = openai.ChatCompletion.create(
+            client = OpenAI(api_key=Config.OPENAI_API_KEY)
+            response = client.chat.completions.create(
                 model="gpt-3.5-turbo",
                 messages=messages,
                 temperature=0.7,
                 max_tokens=500
             )
             
-            assistant_response = response.choices[0].message['content'].strip()
+            assistant_response = response.choices[0].message.content.strip()
             print(f"✅ OpenAI response: '{assistant_response}'")
             
             # Add assistant response to conversation
