@@ -318,6 +318,11 @@
     </style>
 </head>
 <body>
+    <div class="top-toolbar" style="width:100%;display:flex;align-items:center;justify-content:flex-end;background:linear-gradient(135deg,#4facfe 0%,#00f2fe 100%);padding:12px 0 12px 0;margin-bottom:16px;box-shadow:0 2px 8px rgba(79,172,254,0.08);">
+        <button id="chores-btn" style="margin-right:32px;padding:10px 24px;border:none;border-radius:8px;background:#fff;color:#4facfe;font-size:1rem;font-weight:600;cursor:pointer;box-shadow:0 2px 8px rgba(79,172,254,0.10);transition:background 0.2s;">
+            🧹 Chores
+        </button>
+    </div>
     <div class="container">
         <div class="header">
             <h1>🗓️ AI Family Calendar Agent</h1>
@@ -566,6 +571,10 @@
                 processText();
             }
         });
+
+        document.getElementById('chores-btn').onclick = function() {
+            window.location.href = '/chores';
+        };
     </script>
 </body>
 </html> 

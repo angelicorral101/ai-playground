@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Family Chores Checklist</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            margin: 0;
+            padding: 0;
+        }
+        .container {
+            max-width: 600px;
+            margin: 40px auto;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            padding: 32px 24px;
+        }
+        .top-bar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 24px;
+        }
+        .back-btn {
+            background: #4facfe;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            padding: 8px 18px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            box-shadow: 0 2px 8px rgba(79,172,254,0.10);
+            transition: background 0.2s;
+        }
+        .back-btn:hover {
+            background: #1976d2;
+        }
+        h2 {
+            color: #4facfe;
+            margin-bottom: 10px;
+        }
+        .chores-list {
+            list-style: none;
+            padding: 0;
+        }
+        .chores-list li {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 12px 0;
+            border-bottom: 1px solid #e9ecef;
+        }
+        .chores-list li:last-child {
+            border-bottom: none;
+        }
+        .chore-label {
+            font-size: 1.1rem;
+            color: #333;
+        }
+        .assign-btn {
+            background: #00f2fe;
+            color: #fff;
+            border: none;
+            border-radius: 8px;
+            padding: 7px 16px;
+            font-size: 0.95rem;
+            font-weight: 600;
+            cursor: pointer;
+            margin-left: 12px;
+            transition: background 0.2s;
+        }
+        .assign-btn:hover {
+            background: #4facfe;
+        }
+        .assigned {
+            color: #28a745;
+            font-weight: 600;
+            margin-left: 10px;
+        }
+        .delete-btn {
+            background: #dc3545;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            padding: 7px 12px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            cursor: pointer;
+            margin-left: 8px;
+            transition: background 0.2s;
+        }
+        .delete-btn:hover {
+            background: #c82333;
+        }
+        .chore-actions {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="top-bar">
+            <button class="back-btn" onclick="window.location.href='/'">← Back</button>
+            <h2>Today's Chores</h2>
+        </div>
+        <ul class="chores-list" id="chores-list">
+            <!-- Chores will be loaded here dynamically -->
+        </ul>
+    </div>
+    <script>
+        async function fetchChores() {
+            const res = await fetch('/api/chores');
+            const chores = await res.json();
+            const list = document.getElementById('chores-list');
+            list.innerHTML = '';
+            chores.forEach(chore => {
+                const li = document.createElement('li');
+                const label = document.createElement('span');
+                label.className = 'chore-label';
+                label.textContent = chore.description;
+                li.appendChild(label);
+                
+                const actionsDiv = document.createElement('div');
+                actionsDiv.className = 'chore-actions';
+                
+                if (chore.assigned_to) {
+                    const assigned = document.createElement('span');
+                    assigned.className = 'assigned';
+                    assigned.textContent = `Assigned to ${chore.assigned_to}`;
+                    actionsDiv.appendChild(assigned);
+                } else {
+                    const btn = document.createElement('button');
+                    btn.className = 'assign-btn';
+                    btn.textContent = 'Pick up';
+                    btn.onclick = () => assignChore(btn, chore.id, chore.description);
+                    actionsDiv.appendChild(btn);
+                }
+                
+                // Add delete button for all chores
+                const deleteBtn = document.createElement('button');
+                deleteBtn.className = 'delete-btn';
+                deleteBtn.textContent = '🗑️';
+                deleteBtn.title = 'Delete chore';
+                deleteBtn.onclick = () => deleteChore(deleteBtn, chore.id, chore.description);
+                actionsDiv.appendChild(deleteBtn);
+                
+                li.appendChild(actionsDiv);
+                list.appendChild(li);
+            });
+        }
+
+        async function assignChore(btn, choreId, choreDesc) {
+            const user = prompt('Enter your name to pick up this chore:');
+            if (user && user.trim()) {
+                btn.disabled = true;
+                btn.textContent = 'Assigning...';
+                const res = await fetch('/api/chores/assign', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ chore_id: choreId, user })
+                });
+                const result = await res.json();
+                if (result.success) {
+                    btn.style.display = 'none';
+                    const assigned = document.createElement('span');
+                    assigned.className = 'assigned';
+                    assigned.textContent = `Assigned to ${user}`;
+                    btn.parentNode.appendChild(assigned);
+                    alert(`Chore '${choreDesc}' assigned to ${user} and added to their calendar!`);
+                } else {
+                    btn.disabled = false;
+                    btn.textContent = 'Pick up';
+                    alert('Failed to assign chore: ' + (result.error || 'Unknown error'));
+                }
+            }
+        }
+
+        async function deleteChore(btn, choreId, choreDesc) {
+            if (confirm(`Are you sure you want to delete the chore "${choreDesc}"?`)) {
+                btn.disabled = true;
+                btn.textContent = '🗑️...';
+                try {
+                    const res = await fetch('/api/chores/delete', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ chore_id: choreId })
+                    });
+                    const result = await res.json();
+                    if (result.success) {
+                        // Remove the chore from the UI
+                        btn.closest('li').remove();
+                        alert(`Chore "${choreDesc}" deleted successfully!`);
+                    } else {
+                        btn.disabled = false;
+                        btn.textContent = '🗑️';
+                        alert('Failed to delete chore: ' + (result.error || 'Unknown error'));
+                    }
+                } catch (error) {
+                    btn.disabled = false;
+                    btn.textContent = '🗑️';
+                    alert('Error deleting chore: ' + error.message);
+                }
+            }
+        }
+
+        fetchChores();
+    </script>
+</body>
+</html> 

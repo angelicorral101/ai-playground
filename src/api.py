@@ -1,5 +1,5 @@
-from fastapi import FastAPI, File, UploadFile, Form, HTTPException, WebSocket, WebSocketDisconnect
-from fastapi.responses import HTMLResponse
+from fastapi import FastAPI, File, UploadFile, Form, HTTPException, WebSocket, WebSocketDisconnect, Request, Depends
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.requests import Request
@@ -7,11 +7,22 @@ from fastapi.middleware.cors import CORSMiddleware
 import json
 import asyncio
 from datetime import datetime
-from typing import Optional
+from typing import Optional, List
+import uuid
 
 from .calendar_agent import CalendarAgent
-from .models import VoiceInput, TextInput, SMSInput, AgentResponse
+from .models import VoiceInput, TextInput, SMSInput, AgentResponse, Chore, ChoreDB, SessionLocal, UserDB
 from .config import Config
+from sqlalchemy.orm import Session
+import jwt
+import os
+from werkzeug.security import check_password_hash
+from datetime import timedelta
+from functools import wraps
+from flask import abort
+from pydantic import BaseModel
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from .nlp_processor import NLPProcessor, InputType
 
 app = FastAPI(title="AI Family Calendar Agent", version="1.0.0")
 
@@ -29,6 +40,18 @@ agent = CalendarAgent()
 
 # Templates for web interface
 templates = Jinja2Templates(directory="templates")
+
+# In-memory chores storage (replace with DB in production)
+chores_db = [
+    Chore(id="1", description="Take out the trash", date=datetime.now().strftime("%Y-%m-%d")),
+    Chore(id="2", description="Wash the dishes", date=datetime.now().strftime("%Y-%m-%d")),
+    Chore(id="3", description="Vacuum the living room", date=datetime.now().strftime("%Y-%m-%d")),
+    Chore(id="4", description="Feed the pets", date=datetime.now().strftime("%Y-%m-%d")),
+]
+
+JWT_SECRET = os.environ.get('JWT_SECRET', 'devsecret')
+JWT_ALGORITHM = 'HS256'
+JWT_EXP_DELTA_SECONDS = 7 * 24 * 3600  # 1 week
 
 @app.on_event("startup")
 async def startup_event():
@@ -433,6 +456,301 @@ async def twilio_webhook(
             "response": f"Error processing SMS: {str(e)}",
             "success": False
         }
+
+# Pydantic models
+class RegisterRequest(BaseModel):
+    email: str
+    password: str
+
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
+class ChoreCreateRequest(BaseModel):
+    description: str
+    date: Optional[str] = None
+
+class ChoreAssignRequest(BaseModel):
+    chore_id: str
+    user: str
+
+class ChoreCompleteRequest(BaseModel):
+    chore_id: str
+
+class ChoreDeleteRequest(BaseModel):
+    chore_id: str
+
+class ChoreResponse(BaseModel):
+    id: str
+    description: str
+    assigned_to: str
+    completed: bool
+    date: str
+
+class ChoresVoiceRequest(BaseModel):
+    text: str
+    # Optionally, add audio: bytes in the future
+
+class ChoresVoiceResponse(BaseModel):
+    success: bool
+    message: str
+    action: Optional[str] = None
+    chore_description: Optional[str] = None
+    assignee: Optional[str] = None
+
+# JWT dependency
+security = HTTPBearer()
+
+def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    token = credentials.credentials
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        return payload
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+
+@app.post('/api/register')
+async def register(req: RegisterRequest):
+    db: Session = SessionLocal()
+    if db.query(UserDB).filter(UserDB.email == req.email).first():
+        db.close()
+        raise HTTPException(status_code=400, detail="Email already registered")
+    user = UserDB(id=str(uuid.uuid4()), email=req.email)
+    user.set_password(req.password)
+    db.add(user)
+    db.commit()
+    db.close()
+    return {"success": True}
+
+@app.post('/api/login')
+async def login(req: LoginRequest):
+    db: Session = SessionLocal()
+    user = db.query(UserDB).filter(UserDB.email == req.email).first()
+    if not user or not user.check_password(req.password):
+        db.close()
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+    payload = {
+        'user_id': user.id,
+        'email': user.email,
+        'exp': datetime.utcnow() + timedelta(seconds=JWT_EXP_DELTA_SECONDS)
+    }
+    token = jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+    db.close()
+    return {"success": True, "token": token}
+
+@app.get('/api/chores', response_model=List[ChoreResponse])
+async def get_chores(date: Optional[str] = None, user=Depends(get_current_user)):
+    date = date or datetime.now().strftime("%Y-%m-%d")
+    db: Session = SessionLocal()
+    chores = db.query(ChoreDB).filter(ChoreDB.date == date).all()
+    db.close()
+    return [ChoreResponse(
+        id=c.id,
+        description=c.description,
+        assigned_to=c.assigned_to,
+        completed=c.completed,
+        date=c.date
+    ) for c in chores]
+
+@app.post('/api/chores', response_model=ChoreResponse)
+async def create_chore(req: ChoreCreateRequest, user=Depends(get_current_user)):
+    db: Session = SessionLocal()
+    chore = ChoreDB(id=str(uuid.uuid4()), description=req.description, date=req.date or datetime.now().strftime('%Y-%m-%d'))
+    db.add(chore)
+    db.commit()
+    db.refresh(chore)
+    db.close()
+    return ChoreResponse(
+        id=chore.id,
+        description=chore.description,
+        assigned_to=chore.assigned_to,
+        completed=chore.completed,
+        date=chore.date
+    )
+
+@app.post('/api/chores/assign', response_model=ChoreResponse)
+async def assign_chore(req: ChoreAssignRequest, user=Depends(get_current_user)):
+    db: Session = SessionLocal()
+    chore = db.query(ChoreDB).filter(ChoreDB.id == req.chore_id).first()
+    if not chore:
+        db.close()
+        raise HTTPException(status_code=404, detail="Chore not found")
+    chore.assigned_to = req.user
+    db.commit()
+    db.refresh(chore)
+    db.close()
+    return ChoreResponse(
+        id=chore.id,
+        description=chore.description,
+        assigned_to=chore.assigned_to,
+        completed=chore.completed,
+        date=chore.date
+    )
+
+@app.post('/api/chores/complete')
+async def complete_chore(req: ChoreCompleteRequest, user=Depends(get_current_user)):
+    db: Session = SessionLocal()
+    chore = db.query(ChoreDB).filter(ChoreDB.id == req.chore_id).first()
+    if not chore:
+        db.close()
+        raise HTTPException(status_code=404, detail="Chore not found")
+    chore.completed = True
+    db.commit()
+    db.close()
+    return {"success": True}
+
+@app.post('/api/chores/delete')
+async def delete_chore(req: ChoreDeleteRequest, user=Depends(get_current_user)):
+    db: Session = SessionLocal()
+    chore = db.query(ChoreDB).filter(ChoreDB.id == req.chore_id).first()
+    if not chore:
+        db.close()
+        raise HTTPException(status_code=404, detail="Chore not found")
+    
+    # Delete the chore
+    db.delete(chore)
+    db.commit()
+    db.close()
+    return {"success": True, "message": "Chore deleted successfully"}
+
+@app.post('/api/chores/voice', response_model=ChoresVoiceResponse)
+async def chores_voice(
+    request: Request,
+    text: str = Form(None),
+    req: Optional[ChoresVoiceRequest] = None,
+    user=Depends(get_current_user)
+):
+    # Accept either form or JSON input
+    if text is None and req is not None:
+        text = req.text
+    
+    # If no text provided, try to get audio data and transcribe it
+    if text is None:
+        try:
+            # Get the filename from headers
+            filename = request.headers.get('X-Filename', 'voice_command.m4a')
+            content_type = request.headers.get('Content-Type', 'audio/mp4')
+            
+            # Read the binary data directly
+            audio_data = await request.body()
+            
+            if len(audio_data) == 0:
+                return ChoresVoiceResponse(success=False, message="Empty audio file received.")
+            
+            # Detect audio format from filename
+            format = agent.voice_processor.detect_audio_format(audio_data, filename)
+            
+            # Create VoiceInput object with detected format
+            voice_input = VoiceInput(audio_data=audio_data, format=format)
+            
+            # Transcribe audio to text
+            text = agent.voice_processor.process_audio_file(audio_data, format)
+            if not text:
+                return ChoresVoiceResponse(success=False, message="Could not transcribe audio.")
+                
+        except Exception as e:
+            return ChoresVoiceResponse(success=False, message=f"Error processing audio: {str(e)}")
+    
+    if text is None:
+        return ChoresVoiceResponse(success=False, message="Missing 'text' parameter or audio data.")
+    
+    result = agent.nlp_processor._fallback_processing(text, InputType.TEXT)
+    db: Session = SessionLocal()
+    user_email = user.get('email', '')
+    if hasattr(result, 'action') and result.__class__.__name__ == 'ChoresCommand':
+        if result.action == 'query':
+            today = datetime.now().strftime('%Y-%m-%d')
+            chores = db.query(ChoreDB).filter(ChoreDB.date == today).all()
+            if not chores:
+                db.close()
+                return ChoresVoiceResponse(success=True, message="No chores found for today.", action='query')
+            summary = []
+            for c in chores:
+                who = f" (assigned to {c.assigned_to})" if c.assigned_to else " (unassigned)"
+                status = "✅" if c.completed else "❌"
+                summary.append(f"{status} {c.description}{who}")
+            db.close()
+            return ChoresVoiceResponse(success=True, message="Today's chores:\n" + '\n'.join(summary), action='query')
+        elif result.action == 'assign':
+            chore = db.query(ChoreDB).filter(
+                ChoreDB.description.ilike(f"%{result.chore_description}%"),
+                (ChoreDB.assigned_to == None) | (ChoreDB.assigned_to == ""),
+                ChoreDB.completed == False
+            ).first()
+            if not chore:
+                db.close()
+                return ChoresVoiceResponse(success=False, message=f"No unassigned chore found matching '{result.chore_description}'.", action='assign')
+            chore.assigned_to = user_email
+            db.commit()
+            db.close()
+            return ChoresVoiceResponse(success=True, message=f"Chore '{chore.description}' assigned to {user_email}.", action='assign', chore_description=chore.description, assignee=user_email)
+        elif result.action == 'complete':
+            chore = db.query(ChoreDB).filter(
+                ChoreDB.description.ilike(f"%{result.chore_description}%"),
+                ChoreDB.assigned_to == user_email,
+                ChoreDB.completed == False
+            ).first()
+            if not chore:
+                db.close()
+                return ChoresVoiceResponse(success=False, message=f"No assigned, incomplete chore found matching '{result.chore_description}'.", action='complete')
+            chore.completed = True
+            db.commit()
+            db.close()
+            return ChoresVoiceResponse(success=True, message=f"Chore '{chore.description}' marked as complete.", action='complete', chore_description=chore.description, assignee=user_email)
+        elif result.action == 'add':
+            # Create a new chore and assign it to the user
+            today = datetime.now().strftime('%Y-%m-%d')
+            
+            # Clean up chore description by removing time/date words
+            description = result.chore_description
+            time_words = ['today', 'tomorrow', 'yesterday', 'tonight', 'this week', 'next week', 'this month', 'next month']
+            for time_word in time_words:
+                description = description.replace(time_word, '').strip()
+            # Clean up extra spaces
+            description = ' '.join(description.split())
+            
+            new_chore = ChoreDB(
+                id=str(uuid.uuid4()),
+                description=description,
+                assigned_to=user_email,
+                completed=False,
+                date=today
+            )
+            db.add(new_chore)
+            db.commit()
+            db.close()
+            return ChoresVoiceResponse(success=True, message=f"Added new chore '{description}' and assigned it to you.", action='add', chore_description=description, assignee=user_email)
+        elif result.action == 'update':
+            # Find and update the chore
+            chore = db.query(ChoreDB).filter(
+                ChoreDB.description.ilike(f"%{result.chore_description}%"),
+                ChoreDB.assigned_to == user_email
+            ).first()
+            if not chore:
+                db.close()
+                return ChoresVoiceResponse(success=False, message=f"No chore found matching '{result.chore_description}' to update.", action='update')
+            # For now, just return a placeholder message
+            db.close()
+            return ChoresVoiceResponse(success=True, message=f"Update functionality for '{result.chore_description}' not yet implemented.", action='update', chore_description=result.chore_description, assignee=user_email)
+        elif result.action == 'remove':
+            # Find and remove the chore
+            chore = db.query(ChoreDB).filter(
+                ChoreDB.description.ilike(f"%{result.chore_description}%"),
+                ChoreDB.assigned_to == user_email
+            ).first()
+            if not chore:
+                db.close()
+                return ChoresVoiceResponse(success=False, message=f"No chore found matching '{result.chore_description}' to remove.", action='remove')
+            db.delete(chore)
+            db.commit()
+            db.close()
+            return ChoresVoiceResponse(success=True, message=f"Removed chore '{result.chore_description}'.", action='remove', chore_description=result.chore_description, assignee=user_email)
+        else:
+            db.close()
+            return ChoresVoiceResponse(success=False, message="Unknown chores action.")
+    else:
+        db.close()
+        return ChoresVoiceResponse(success=False, message="No chores intent detected.")
 
 if __name__ == "__main__":
     import uvicorn

@@ -2,6 +2,39 @@ from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any
 from datetime import datetime, date
 from enum import Enum
+from dataclasses import dataclass
+from sqlalchemy import create_engine, Column, String, Boolean, Date, Integer, UniqueConstraint
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker
+from werkzeug.security import generate_password_hash, check_password_hash
+
+Base = declarative_base()
+
+class ChoreDB(Base):
+    __tablename__ = 'chores'
+    id = Column(String, primary_key=True)
+    description = Column(String, nullable=False)
+    assigned_to = Column(String, default="")
+    completed = Column(Boolean, default=False)
+    date = Column(String, nullable=False)  # Store as YYYY-MM-DD
+
+class UserDB(Base):
+    __tablename__ = 'users'
+    id = Column(String, primary_key=True)
+    email = Column(String, unique=True, nullable=False)
+    password_hash = Column(String, nullable=False)
+    __table_args__ = (UniqueConstraint('email', name='uq_user_email'),)
+
+    def set_password(self, password):
+        self.password_hash = generate_password_hash(password, method="pbkdf2:sha256")
+
+    def check_password(self, password):
+        return check_password_hash(self.password_hash, password)
+
+# SQLite setup
+engine = create_engine('sqlite:///chores.db')
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+Base.metadata.create_all(bind=engine)
 
 class InputType(str, Enum):
     VOICE = "voice"
@@ -65,3 +98,26 @@ class AgentResponse(BaseModel):
     audio_response: Optional[bytes] = None  # Audio data for voice responses
     queried_date: Optional[Any] = None  # ISO string or list of ISO strings for UI rendering
     queried_view: Optional[str] = None  # e.g. 'week', 'day', etc. for UI rendering 
+
+class ChoresAction(str, Enum):
+    QUERY = "query"
+    ASSIGN = "assign"
+    COMPLETE = "complete"
+    ADD = "add"
+    UPDATE = "update"
+    REMOVE = "remove"
+
+@dataclass
+class ChoresCommand:
+    action: ChoresAction
+    chore_description: str = ""
+    assignee: str = ""
+    raw_input: str = ""
+
+@dataclass
+class Chore:
+    id: str
+    description: str
+    assigned_to: str = ""
+    completed: bool = False
+    date: str = ""  # YYYY-MM-DD 

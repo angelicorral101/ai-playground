@@ -2,44 +2,77 @@ import json
 from datetime import datetime, timedelta
 from dateutil import parser
 from .config import Config
-from .models import ProcessedCommand, CalendarEvent, CalendarAction, InputType
+from .models import ProcessedCommand, CalendarEvent, CalendarAction, InputType, ChoresCommand, ChoresAction
 import openai  # Updated import for v0.28.1
 from openai import OpenAI
 
 class NLPProcessor:
     def __init__(self):
         self.base_system_prompt = """
-You are a positive, helpful, friendly, and accommodating AI assistant that helps manage a family calendar. You understand natural language commands and convert them into structured calendar actions.
+You are a positive, helpful, friendly, and accommodating AI assistant that helps manage a family calendar and chores through natural language commands. You understand natural language commands and convert them into structured actions.
 
 Your task is to:
-1. Identify the intended action (create, update, delete, read, list)
-2. Extract event details (title, date/time, location, attendees, description)
-3. Handle multiple events in a single command when requested
-4. Return a JSON response with the structured data
+1. Identify the intended action (create, update, delete, read, list) for calendar OR (add, assign, complete, update, remove, query) for chores
+2. Extract event details (title, date/time, location, attendees, description) for calendar events
+3. Extract chore details (description, assignee) for chores
+4. Handle multiple events in a single command when requested
+5. Return a JSON response with the structured data
 
-CRITICAL: Distinguish between CREATE and READ actions:
-- CREATE: User wants to add/schedule a new event
-- READ: User wants to see/view/check existing events
+CRITICAL: Distinguish between CALENDAR and CHORES commands:
+- CALENDAR keywords: calendar, schedule, appointment, meeting, event, appointment
+- CHORES keywords: chore, chores, housework, task, tasks, cleaning, cooking, laundry, dishes, vacuum, trash
+
+CALENDAR ACTIONS:
+- CREATE: User wants to add/schedule a new calendar event
+- READ: User wants to see/view/check existing calendar events
+
+CHORES ACTIONS:
+- ADD: User wants to create a new chore (e.g., "add dinner to my chores")
+- ASSIGN: User wants to assign an existing chore to themselves or someone else
+- COMPLETE: User wants to mark a chore as done
+- UPDATE: User wants to modify an existing chore
+- REMOVE: User wants to delete a chore
+- QUERY: User wants to see what chores exist
+
+IMPORTANT FOR CHORES: When extracting chore descriptions, only include the core task name, not time/date words:
+- "Add dinner to my chores for today" → chore description: "dinner" (not "dinner today")
+- "Add vacuum the living room to my chores" → chore description: "vacuum the living room"
+- "Add wash dishes for tomorrow" → chore description: "wash dishes" (not "wash dishes for tomorrow")
+- "Add take out trash today" → chore description: "take out trash" (not "take out trash today")
+
+Time and date information should be ignored when extracting chore descriptions.
+
+CHORES DESCRIPTION EXTRACTION RULES:
+1. Extract ONLY the core task/activity name
+2. Remove all time-related words: today, tomorrow, yesterday, tonight, this week, next week, this month, next month
+3. Remove all date-related words: Monday, Tuesday, etc.
+4. Remove all prepositional phrases about time: "for today", "for tomorrow", "this afternoon", etc.
+5. Keep the essential task description: "dinner", "wash dishes", "vacuum living room", "take out trash"
+
+EXAMPLES OF CORRECT EXTRACTION:
+- Input: "Add dinner to my chores for today" → Output: "dinner"
+- Input: "Add wash dishes for tomorrow" → Output: "wash dishes" 
+- Input: "Add vacuum the living room today" → Output: "vacuum the living room"
+- Input: "Add take out trash this afternoon" → Output: "take out trash"
+- Input: "Add make breakfast for tomorrow morning" → Output: "make breakfast"
 
 READ action keywords: what, show, list, check, see, tell me, what's, what is, schedule (when asking about existing schedule), events, appointments, meetings
-CREATE action keywords: schedule, add, create, book, set up, arrange, plan (when creating new events)
+CREATE action keywords: schedule, add, create, book, set up, arrange, plan (when creating new calendar events)
+
+CHORES action keywords:
+- ADD: add, create, new, make, put, schedule (when followed by "chores")
+- ASSIGN: assign, pick up, take, do, claim
+- COMPLETE: complete, done, finish, mark as done, mark complete
+- UPDATE: update, edit, change, modify, rename
+- REMOVE: remove, delete, cancel, clear
+- QUERY: what chores, show chores, list chores, check chores
 
 IMPORTANT: If the user asks about a specific date (e.g., "on July 17th", "for tomorrow", "next Friday"), ALWAYS extract and return a start_time and end_time for that date in the event object, even if the user does not use explicit date range language. Do not rely only on the query field for date-based questions.
 
-Common patterns:
-- "Schedule a meeting" → CREATE action with single event
-- "Create events tomorrow and Thursday" → CREATE action with multiple events
-- "What's on my calendar on July 17th?" → READ action with event.start_time and event.end_time set to July 17th
-- "Show me my schedule for the week" → READ action with query about week
-- "What do I have planned tomorrow?" → READ action with event.start_time and event.end_time set to tomorrow
-- "Delete the meeting" → DELETE action
-- "Update the appointment" → UPDATE action
-
-For multiple events, if the user mentions multiple dates/times for the same event, create separate events for each date.
-
 Return a JSON object with this structure:
 {
-    "action": "create|read|update|delete|list",
+    "action": "create|read|update|delete|list|add|assign|complete|update|remove|query",
+    "type": "calendar|chores",
     "events": [
         {
             "summary": "Event title",
@@ -55,43 +88,29 @@ Return a JSON object with this structure:
             ]
         }
     ],
+    "chores": [
+        {
+            "description": "Chore description",
+            "assignee": "user_email_or_name",
+            "action": "add|assign|complete|update|remove"
+        }
+    ],
     "query": "search query for read/list actions",
     "confidence": 0.95
 }
 
-For calendar selection, extract calendar information from phrases like:
-- "on my Shared Family calendar" → calendar_id: "shared_family"
-- "on my work calendar" → calendar_id: "work"
-- "on the family calendar" → calendar_id: "family"
-- "put it on [calendar name]" → calendar_id: "[calendar_name]"
-
-For reminders/notifications, extract timing from phrases like:
-- "alert 1 hour before" → reminders: [{"method": "popup", "minutes": 60}]
-- "notify 30 minutes before" → reminders: [{"method": "popup", "minutes": 30}]
-- "remind me 2 hours before" → reminders: [{"method": "popup", "minutes": 120}]
-- "email reminder 1 day before" → reminders: [{"method": "email", "minutes": 1440}]
-- "alert 15 minutes before and 1 hour before" → reminders: [{"method": "popup", "minutes": 15}, {"method": "popup", "minutes": 60}]
-
 EXAMPLES:
 
-CREATE ACTIONS:
-- "Create an event tomorrow and on Thursday that says Amelie's Tryouts at 3:45" → Creates 2 events: one for tomorrow at 3:45 PM and one for Thursday at 3:45 PM
-- "Schedule meetings Monday and Wednesday at 2pm" → Creates 2 events: one for Monday at 2 PM and one for Wednesday at 2 PM
-- "Add a dentist appointment next Friday at 2pm" → CREATE action with single event
+CALENDAR ACTIONS:
+- "Schedule a meeting tomorrow at 2pm" → CREATE action with single event
+- "What's on my calendar today?" → READ action with event.start_time and event.end_time set to today
 
-READ ACTIONS:
-- "What's on my calendar on July 17th?" → READ action with event.start_time and event.end_time set to July 17 (all-day)
-- "What do I have scheduled on July 21st?" → READ action with event.start_time and event.end_time set to July 21 (all-day)
-- "What is my schedule tomorrow?" → READ action with event.start_time and event.end_time set to tomorrow
-- "Show me my events this week" → READ action with query: "this week"
-- "What's on my schedule for the week?" → READ action with query: "week"
-- "Tell me what I have planned for next week" → READ action with query: "next week"
-- "What do I have on my calendar today?" → READ action with event.start_time and event.end_time set to today
-- "Check my schedule for Friday" → READ action with event.start_time and event.end_time set to Friday
-- "What meetings do I have this week?" → READ action with query: "meetings this week"
-- "Show me my appointments for tomorrow" → READ action with event.start_time and event.end_time set to tomorrow
-- "What's on my calendar this month?" → READ action with query: "this month"
-- "List my events for next Monday" → READ action with event.start_time and event.end_time set to next Monday
+CHORES ACTIONS:
+- "Add dinner to my chores for today" → ADD action with chore description "dinner"
+- "Assign vacuuming to me" → ASSIGN action with chore description "vacuuming"
+- "Mark dishes as complete" → COMPLETE action with chore description "dishes"
+- "What chores do I have today?" → QUERY action for chores
+- "Remove making dinner from my chores" → REMOVE action with chore description "making dinner"
 """
 
     def _get_system_prompt_with_current_date(self) -> str:
@@ -176,6 +195,33 @@ For specific dates mentioned in queries (like "July 21st", "December 25th", etc.
             try:
                 data = json.loads(content)
                 print(f"✅ Parsed JSON: {json.dumps(data, indent=2)}")
+                
+                # Check if this is a chores command
+                if data.get('type') == 'chores':
+                    chores_data = data.get('chores', [])
+                    if chores_data:
+                        chore_data = chores_data[0]
+                        # Clean up chore description by removing time/date words
+                        description = chore_data.get('description', '')
+                        time_words = ['today', 'tomorrow', 'yesterday', 'tonight', 'this week', 'next week', 'this month', 'next month']
+                        for time_word in time_words:
+                            description = description.replace(time_word, '').strip()
+                        # Clean up extra spaces
+                        description = ' '.join(description.split())
+                        
+                        return ChoresCommand(
+                            action=ChoresAction(chore_data.get('action', 'query')),
+                            chore_description=description,
+                            assignee=chore_data.get('assignee', ''),
+                            raw_input=text
+                        )
+                    else:
+                        return ChoresCommand(
+                            action=ChoresAction.QUERY,
+                            raw_input=text
+                        )
+                
+                # Handle calendar events (existing logic)
                 events_data = data.get('events', [])
                 if not events_data and data.get('event'):
                     events_data = [data.get('event')]
@@ -231,10 +277,90 @@ For specific dates mentioned in queries (like "July 21st", "December 25th", etc.
             print(f"❌ Error processing text: {e}")
             return self._fallback_processing(text, input_type)
 
-    def _fallback_processing(self, text: str, input_type: InputType) -> ProcessedCommand:
+    def _fallback_processing(self, text: str, input_type: InputType):
         text_lower = text.lower()
         now = datetime.now()
         default_end = now + timedelta(hours=1)
+        # Chores intent detection
+        chores_keywords = ['chore', 'chores', 'housework', 'task', 'tasks']
+        assign_keywords = ['assign', 'pick up', 'take', 'do', 'claim']
+        complete_keywords = ['complete', 'done', 'finish', 'mark as done', 'mark complete']
+        add_keywords = ['add', 'create', 'new', 'make', 'put', 'schedule']
+        update_keywords = ['update', 'edit', 'change', 'modify', 'rename']
+        remove_keywords = ['remove', 'delete', 'cancel', 'clear']
+        if any(word in text_lower for word in chores_keywords):
+            if any(word in text_lower for word in add_keywords):
+                # Extract description using word-based filtering
+                words = text.split()
+                filtered_words = []
+                skip_words = set(chores_keywords + add_keywords + ['to', 'for', 'my', 'the', 'a', 'an'])
+                for word in words:
+                    if word.lower() not in skip_words:
+                        filtered_words.append(word)
+                desc = ' '.join(filtered_words).strip(' .:,')
+                return ChoresCommand(
+                    action=ChoresAction.ADD,
+                    chore_description=desc,
+                    raw_input=text
+                )
+            elif any(word in text_lower for word in assign_keywords):
+                words = text.split()
+                filtered_words = []
+                skip_words = set(chores_keywords + assign_keywords + ['to', 'for', 'my', 'the', 'a', 'an'])
+                for word in words:
+                    if word.lower() not in skip_words:
+                        filtered_words.append(word)
+                desc = ' '.join(filtered_words).strip(' .:,')
+                return ChoresCommand(
+                    action=ChoresAction.ASSIGN,
+                    chore_description=desc,
+                    raw_input=text
+                )
+            elif any(word in text_lower for word in complete_keywords):
+                words = text.split()
+                filtered_words = []
+                skip_words = set(chores_keywords + complete_keywords + ['to', 'for', 'my', 'the', 'a', 'an'])
+                for word in words:
+                    if word.lower() not in skip_words:
+                        filtered_words.append(word)
+                desc = ' '.join(filtered_words).strip(' .:,')
+                return ChoresCommand(
+                    action=ChoresAction.COMPLETE,
+                    chore_description=desc,
+                    raw_input=text
+                )
+            elif any(word in text_lower for word in update_keywords):
+                words = text.split()
+                filtered_words = []
+                skip_words = set(chores_keywords + update_keywords + ['to', 'for', 'my', 'the', 'a', 'an'])
+                for word in words:
+                    if word.lower() not in skip_words:
+                        filtered_words.append(word)
+                desc = ' '.join(filtered_words).strip(' .:,')
+                return ChoresCommand(
+                    action=ChoresAction.UPDATE,
+                    chore_description=desc,
+                    raw_input=text
+                )
+            elif any(word in text_lower for word in remove_keywords):
+                words = text.split()
+                filtered_words = []
+                skip_words = set(chores_keywords + remove_keywords + ['to', 'for', 'my', 'the', 'a', 'an'])
+                for word in words:
+                    if word.lower() not in skip_words:
+                        filtered_words.append(word)
+                desc = ' '.join(filtered_words).strip(' .:,')
+                return ChoresCommand(
+                    action=ChoresAction.REMOVE,
+                    chore_description=desc,
+                    raw_input=text
+                )
+            else:
+                return ChoresCommand(
+                    action=ChoresAction.QUERY,
+                    raw_input=text
+                )
+        # Calendar fallback logic
         read_keywords = ['what', 'show', 'list', 'check', 'see', 'tell me', "what's", 'what is', 'events', 'appointments', 'meetings', 'schedule']
         create_keywords = ['schedule', 'add', 'create', 'book', 'set up', 'arrange', 'plan']
         relative_queries = [

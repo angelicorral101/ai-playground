@@ -4,6 +4,8 @@ Test day of the week calculations
 """
 
 from datetime import datetime, timedelta
+from fastapi import FastAPI, File, UploadFile, Form, HTTPException, WebSocket, WebSocketDisconnect, Request, Depends
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 def test_day_of_week():
     print("🔍 Testing Day of Week Calculations")
